@@ -1,0 +1,4 @@
+Particulars Net Asset Value as of this month-end (Rs.) Net Asset Value as of last month-end (Rs.)
+Listed Shares 294,289,383.70 309,305,336.80
+Debentures 1,444,000.00 1,444,000.00
+Total 301,038,434.30 314,649,401.60

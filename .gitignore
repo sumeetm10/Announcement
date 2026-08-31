@@ -1,0 +1,39 @@
+# ─── SECRETS — never commit. Read from env vars in CI instead. ───
+# GEMINI_API_KEY (comma-separated), GEMINI_MODEL, NEPSE_EMAIL / NEPSE_PASSWORD,
+# BLOG_JWT are all supported as environment variables by the scripts, so none of
+# these files need to exist in the repo.
+.jwt
+.gemini-key
+.gemini-keys
+.gemini-model
+.gcv-key
+.openrouter-key
+.openrouter-model
+*.pem
+*.key
+.env
+.env.*
+
+# ─── Run state — machine-local, not source ───
+# Dedupe history. The backend slug lookup in auto-post-announcements.js is the
+# real dedupe; this file is a local second layer restored from actions/cache in
+# CI, so it must not live in git history.
+.posted-source-urls.json
+live-blog-state.json
+news-announcements.json
+news-onlinekhabar.json
+news-to-post.json
+pending-rephrasings.json
+imported-rephrasings.json
+last-gemini-failure.txt
+logs/
+
+# ─── Build / vendored ───
+node_modules/
+
+# ─── Large OCR model data (Tesseract legacy path — pipeline uses Gemini) ───
+*.traineddata
+
+# ─── Scratch output from OCR experiments ───
+ocr-*.html
+ocr-*.txt

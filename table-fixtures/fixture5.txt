@@ -1,0 +1,8 @@
+Particulars Group_This_Quarter_Ending Group_Immediate_Previous_Year_Ending NMB_This_Quarter_Ending NMB_Immediate_Previous_Year_Ending
+Assets
+Cash and cash equivalent 22,274,716 46,995,817 21,166,742 33,385,654
+Due from Nepal Rastra Bank 18,740,521 16,519,123 18,698,021 16,489,123
+Liabilities
+Deposits from customers 316,867,875 280,117,507 315,118,455 280,926,468
+Equity
+Share capital 22,285,041 18,366,706 22,285,041 18,366,706

@@ -1,0 +1,16 @@
+{
+  "name": "news-tools",
+  "version": "1.0.0",
+  "description": "Scrape ShareSansar announcements and post them as news to the NEPSE backend.",
+  "main": "batch-post-news.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "sharp": "^0.34.5"
+  }
+}

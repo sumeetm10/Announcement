@@ -1,0 +1,5 @@
+Particulars Current Year Previous Year Corresponding
+This Quarter Upto This Quarter(YTD) This Quarter Upto This Quarter(YTD)
+Profit or Loss for the period 91,449,119 150,473,889 108,618,389 80,820,548
+Other comprehensive income 1,449,119 5,473,889 8,618,389 2,820,548
+Total comprehensive income 92,898,238 155,947,778 117,236,778 83,641,096

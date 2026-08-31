@@ -1,0 +1,101 @@
+name: Announcements
+
+# Replaces the two Windows scheduled tasks (NEPSE-Announcements-Morning /
+# -Evening) so the pipeline runs with the laptop off.
+#
+# CADENCE — hourly, not the half-hourly the laptop used.
+# Measured over 14 days of logs/auto-*.log: 181 runs cost 1033 billed minutes
+# (~5.7 min/run, worst 55 min). At the old 30-minute cadence that is ~2,214
+# min/month, and a PRIVATE repo on the Free plan gets 2,000. Overrunning does
+# not bill — Actions simply stops until the next cycle, which would kill the
+# pipeline silently near month end, the exact failure mode this rewrite exists
+# to remove. Hourly Sun-Fri is ~1,340 min/month, ~33% headroom.
+#
+# GitHub cron is UTC and NPT is UTC+05:45, so :15 past the hour is the top of
+# the hour in Kathmandu. Cron here is BEST-EFFORT: 5-15 minute delays are normal
+# under load and individual runs are occasionally dropped entirely. That is
+# tolerable because every run is a full catch-up sweep, not an increment — a
+# missed run is picked up by the next one.
+#
+# Sun-Fri (0-5) mirrors the backend cron; ShareSansar is quiet on Saturday.
+on:
+  schedule:
+    - cron: '15 1-4 * * 0-5'    # 07:00-10:00 NPT
+    - cron: '15 10-14 * * 0-5'  # 16:00-20:00 NPT
+  workflow_dispatch:            # manual catch-up run
+
+# Never let two runs post at once. The dedupe is a backend slug lookup plus a
+# local URL cache, and both are read at start-of-run — overlapping runs would
+# race and could double-post. Queue instead of cancelling so a long OCR run
+# still finishes rather than being killed by the next tick.
+concurrency:
+  group: announcements
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    # Worst observed run was 55 min. 90 caps a hung Gemini call well under the
+    # 6h job ceiling so a stuck run cannot eat the month's minutes.
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      # Dedupe state. .posted-source-urls.json is gitignored (it is run state,
+      # not source), so it is carried between runs by the cache instead. The
+      # restore-key chain means a fresh key still recovers the newest existing
+      # copy. This is only the SECOND dedupe layer — auto-post-announcements.js
+      # queries the backend for existing slugs first — so a cache miss cannot
+      # cause a double-post, it just widens the window the backend check covers.
+      - name: Restore posted-URL cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .posted-source-urls.json
+          key: posted-urls-${{ github.run_id }}
+          restore-keys: |
+            posted-urls-
+
+      - name: Run announcement pipeline
+        env:
+          # Comma-separated; getGeminiKeys() splits on commas and de-dupes.
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # NOT a secret, and NOT left unset: getGeminiModel() falls back to
+          # .gemini-model (gitignored, absent in CI) and then to the built-in
+          # default "gemini-2.5-flash", which now 404s. An empty secret would
+          # therefore break every OCR call silently. Literal default here, with
+          # a repo variable to override without touching the workflow.
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-flash-latest' }}
+          # Fresh JWT per run via POST /auth/login — no pasted cookie to expire.
+          NEPSE_EMAIL: ${{ secrets.NEPSE_EMAIL }}
+          NEPSE_PASSWORD: ${{ secrets.NEPSE_PASSWORD }}
+        run: node auto-post-announcements.js
+
+      # Always saved, even when the run fails: the pipeline posts and records
+      # incrementally, so a run that dies partway through has still published
+      # items whose URLs must not be re-posted next hour.
+      - name: Save posted-URL cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .posted-source-urls.json
+          key: posted-urls-${{ github.run_id }}
+
+      - name: Upload run log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ github.run_id }}
+          path: logs/
+          retention-days: 7
+          if-no-files-found: ignore

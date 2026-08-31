@@ -1,0 +1,19 @@
+{
+  "_comment": "Expected <table>/<thead> counts per fixture for check-tables.js. Update ONLY with a reason recorded in the vault note 'Announcement table headers - root causes found by corpus audit'.",
+  "fixture2": { "tables": 1, "thead": 1, "note": "Nepali monthly NAV, two-line unit header" },
+  "fixture5": { "tables": 1, "thead": 1, "note": "NMB underscore-flattened two-level header" },
+  "fixture6": { "tables": 1, "thead": 1, "note": "date-labelled columns (As on 32nd Ashadh 2080 ...)" },
+  "fixture7": { "tables": 1, "thead": 1, "note": "Unaudited/Audited column openers" },
+  "fixture8": { "tables": 1, "thead": 1, "note": "plain Particulars / This Quarter / Immediate Previous Year" },
+  "real1": { "tables": 1, "thead": 1, "note": "(Rs.)-terminated columns, splitByTrailingUnit" },
+  "real2": { "tables": 1, "thead": 1, "note": "long NAV column labels" },
+  "real3": { "tables": 0, "thead": 0, "note": "text-column table - out of scope, must NOT form a table" },
+  "pinned": { "tables": 1, "thead": 0, "note": "data rows with no header in the source" },
+  "prose": { "tables": 0, "thead": 0, "note": "adversarial: strong+weak markers inside a sentence" },
+  "adv": { "tables": 1, "thead": 0, "note": "adversarial: tiling-shaped prose above real rows" },
+  "adv2": { "tables": 1, "thead": 0, "note": "adversarial: column-noun prose (total/value/number/जम्मा/मूल्य)" },
+  "caps": { "tables": 1, "thead": 1, "note": "ALL-CAPS + <h2> + Devanagari-paren section bands must NOT split the table" },
+  "hdr2": { "tables": 1, "thead": 1, "note": "label column is a plain noun (Assets), no strong marker" },
+  "hdr5": { "tables": 1, "thead": 1, "note": "column-noun header, needs a provable split" },
+  "hdr6": { "tables": 1, "thead": 1, "note": "hierarchical two-line header, cross product" }
+}
