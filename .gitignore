@@ -21,6 +21,7 @@
 .posted-source-urls.json
 live-blog-state.json
 news-announcements.json
+news-announcements.failures.json
 news-onlinekhabar.json
 news-to-post.json
 pending-rephrasings.json

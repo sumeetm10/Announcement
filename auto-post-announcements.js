@@ -27,6 +27,7 @@ const API_BASE = "https://api.nepsetrading.com";
 const FETCH_SCRIPT = path.join(__dirname, "fetch-announcements.js");
 const POST_SCRIPT = path.join(__dirname, "batch-post-news.js");
 const JSON_FILE = path.join(__dirname, "news-announcements.json");
+const FAILURES_FILE = path.join(__dirname, "news-announcements.failures.json");
 const ANNOUNCEMENT_TAG = "Announcement";
 // Fetch top 40 per cron run — observed ShareSansar publishing 28-40
 // announcements/day at peak (quarterly-result season hits hardest, with
@@ -324,6 +325,34 @@ function writeAndPost(fresh) {
   log("info", `Cached ${cacheEntries.length} source URL(s) in ${path.basename(POSTED_URLS_CACHE_FILE)}`);
 }
 
+// Per-item failures recorded by fetch-announcements.js. These are items that
+// SHOULD have reached the site and did not — a Gemini 503, a parse error — as
+// opposed to a deliberate skip. They are reported at the very END of the run so
+// the items that DID succeed are posted first; the run then exits non-zero so
+// the failure is visible. Without this the pipeline reports success while
+// silently dropping the day's announcements (2026-09-01: all three lost to
+// "Gemini 503: model is currently experiencing high demand", exit 0).
+function reportItemFailures() {
+  let failures = [];
+  try {
+    if (fs.existsSync(FAILURES_FILE)) {
+      const parsed = JSON.parse(fs.readFileSync(FAILURES_FILE, "utf-8"));
+      if (Array.isArray(parsed)) failures = parsed;
+    }
+  } catch {
+    // An unreadable sidecar must not mask a real result either way.
+    log("warn", `Could not read ${path.basename(FAILURES_FILE)}`);
+    return 0;
+  }
+  for (const f of failures) {
+    log("error", `ITEM FAILED: ${f.title || "(untitled)"} — ${f.error} [${f.url || ""}]`);
+  }
+  if (failures.length > 0) {
+    log("error", `${failures.length} announcement(s) could not be processed this run.`);
+  }
+  return failures.length;
+}
+
 // ─── Main ───
 // Uses `process.exitCode = N` instead of `process.exit(N)` so any pending
 // async handles (HTTP sockets from the dedup query, sub-process pipes from
@@ -341,15 +370,17 @@ function writeAndPost(fresh) {
     const fresh = loadAndDedup(existing);
 
     if (fresh.length === 0) {
-      log("info", "Nothing new to post. Exiting cleanly.");
-      log("info", `=== auto-post-announcements done ===`);
-      process.exitCode = 0;
+      log("info", "Nothing new to post.");
+      const failed = reportItemFailures();
+      log("info", `=== auto-post-announcements ${failed ? "FAILED" : "done"} ===`);
+      process.exitCode = failed ? 1 : 0;
       return;
     }
 
     writeAndPost(fresh);
-    log("info", `=== auto-post-announcements done ===`);
-    process.exitCode = 0;
+    const failed = reportItemFailures();
+    log("info", `=== auto-post-announcements ${failed ? "FAILED" : "done"} ===`);
+    process.exitCode = failed ? 1 : 0;
   } catch (err) {
     log("error", `FATAL: ${err && err.message ? err.message : err}`);
     log("error", `=== auto-post-announcements FAILED ===`);

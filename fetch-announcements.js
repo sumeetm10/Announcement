@@ -32,6 +32,12 @@ const sharp = require("sharp");
 // ─── Config ───
 const LIST_URL = "https://www.sharesansar.com/announcement";
 const OUTPUT_FILE = path.join(__dirname, "news-announcements.json");
+// Per-item OCR/parse failures from the last run. Written EVERY run (emptied
+// when clean) so auto-post-announcements.js can fail the run AFTER posting the
+// items that did succeed. Exiting non-zero from here instead would make
+// runFetch() throw and skip the posting step, turning a partial failure into a
+// total one.
+const FAILURES_FILE = path.join(__dirname, "news-announcements.failures.json");
 const ANNOUNCEMENT_TAG = "Announcement";
 const POLITE_DELAY_MS = 1500;
 const DEFAULT_COUNT = 5;
@@ -3288,6 +3294,7 @@ async function main() {
   }
 
   const news = [];
+  const failures = [];
   for (let i = 0; i < items.length; i++) {
     const it = items[i];
     const label = `[${i + 1}/${items.length}]`;
@@ -3300,6 +3307,12 @@ async function main() {
       if (e && e.skipped) {
         console.log(`${label} skipped (${e.message})\n`);
       } else {
+        // A skip is a DECISION (duplicate, outside the age window); a FAILURE is
+        // an item the reader should have received and did not. On 2026-09-01 all
+        // three of the day's announcements died on "Gemini 503: model is
+        // currently experiencing high demand" and the run still exited 0 — Task
+        // Scheduler logged result=0 and nothing ever surfaced.
+        failures.push({ title: it.title, url: it.url, error: String(e.message || e) });
         console.log(`${label} FAILED: ${e.message}\n`);
       }
     }
@@ -3309,6 +3322,14 @@ async function main() {
   }
 
   fs.writeFileSync(OUTPUT_FILE, JSON.stringify(news, null, 2), "utf-8");
+  // Always rewritten, so a clean run clears the previous run's failures.
+  fs.writeFileSync(FAILURES_FILE, JSON.stringify(failures, null, 2), "utf-8");
+  if (failures.length > 0) {
+    console.log(
+      `${failures.length} item(s) FAILED and were not written — recorded in ` +
+        `${path.basename(FAILURES_FILE)}`
+    );
+  }
   console.log(`${news.length} item(s) written to ${path.basename(OUTPUT_FILE)}`);
   console.log(`Next: node batch-post-news.js --file=${path.basename(OUTPUT_FILE)}\n`);
 }
