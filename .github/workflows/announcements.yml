@@ -66,6 +66,19 @@ jobs:
           restore-keys: |
             posted-urls-
 
+      # The pipeline only CREATES .posted-source-urls.json after it successfully
+      # posts something, and it writes logs to stdout rather than logs/ (the
+      # logs/ directory is made by the Windows .bat wrapper, which does not run
+      # here). Without both paths existing, actions/cache/save aborts with
+      # "Path Validation Error ... no cache is being saved" and every run stays
+      # cold, re-OCRing items it should have skipped and burning Gemini quota —
+      # which is what turned a transient 503 into three lost announcements.
+      # touch does not truncate, so a restored cache file survives this.
+      - name: Ensure cache and log paths exist
+        run: |
+          touch .posted-source-urls.json
+          mkdir -p logs
+
       - name: Run announcement pipeline
         env:
           # Comma-separated; getGeminiKeys() splits on commas and de-dupes.
