@@ -3,25 +3,29 @@ name: Announcements
 # Replaces the two Windows scheduled tasks (NEPSE-Announcements-Morning /
 # -Evening) so the pipeline runs with the laptop off.
 #
-# CADENCE — hourly, not the half-hourly the laptop used.
+# CADENCE — every 30 minutes, matching what the laptop used to do.
 # Measured over 14 days of logs/auto-*.log: 181 runs cost 1033 billed minutes
-# (~5.7 min/run, worst 55 min). At the old 30-minute cadence that is ~2,214
-# min/month, and a PRIVATE repo on the Free plan gets 2,000. Overrunning does
-# not bill — Actions simply stops until the next cycle, which would kill the
-# pipeline silently near month end, the exact failure mode this rewrite exists
-# to remove. Hourly Sun-Fri is ~1,340 min/month, ~33% headroom.
+# (~5.7 min/run, worst 55 min), so 18 runs/day is ~2,700 min/month. That only
+# fits because this repo is PUBLIC — Actions minutes are unmetered for public
+# repos. If it is ever made private the Free-plan allowance is 2,000 min/month
+# and this cadence WILL exhaust it mid-month, at which point Actions simply
+# stops running until the next billing cycle and the pipeline dies silently.
+# Drop back to hourly (`15` instead of `15,45`) before making it private.
+#
+# The half-hourly cadence is also the mitigation for GitHub dropping scheduled
+# runs. On 2026-09-02, 9 scheduled runs were due and 2 fired; one arrived ~2h
+# late. Cron here is explicitly BEST-EFFORT. Every run is a full catch-up sweep
+# rather than an increment, so a dropped tick loses nothing — it just delays
+# publication, and more ticks means more chances to land.
 #
 # GitHub cron is UTC and NPT is UTC+05:45, so :15 past the hour is the top of
-# the hour in Kathmandu. Cron here is BEST-EFFORT: 5-15 minute delays are normal
-# under load and individual runs are occasionally dropped entirely. That is
-# tolerable because every run is a full catch-up sweep, not an increment — a
-# missed run is picked up by the next one.
+# the hour in Kathmandu and :45 is the half hour.
 #
 # Sun-Fri (0-5) mirrors the backend cron; ShareSansar is quiet on Saturday.
 on:
   schedule:
-    - cron: '15 1-4 * * 0-5'    # 07:00-10:00 NPT
-    - cron: '15 10-14 * * 0-5'  # 16:00-20:00 NPT
+    - cron: '15,45 1-4 * * 0-5'    # 07:00-10:30 NPT
+    - cron: '15,45 10-14 * * 0-5'  # 16:00-20:30 NPT
   workflow_dispatch:            # manual catch-up run
 
 # Never let two runs post at once. The dedupe is a backend slug lookup plus a
