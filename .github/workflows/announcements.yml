@@ -87,12 +87,18 @@ jobs:
         env:
           # Comma-separated; getGeminiKeys() splits on commas and de-dupes.
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          # NOT a secret, and NOT left unset: getGeminiModel() falls back to
-          # .gemini-model (gitignored, absent in CI) and then to the built-in
-          # default "gemini-2.5-flash", which now 404s. An empty secret would
-          # therefore break every OCR call silently. Literal default here, with
-          # a repo variable to override without touching the workflow.
-          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-flash-latest' }}
+          # NOT a secret, and NOT left unset: getGeminiModel() treats an empty
+          # env var as unset and falls back to .gemini-model, which is gitignored
+          # and absent in CI. Pin it explicitly here.
+          #
+          # 2026-09-03: was 'gemini-flash-latest'. That alias is SATURATED for
+          # vision — probing a 945x1417 page across the 6 keys returned
+          # 429/429/429/503, and it cost a full day of announcements (8 items
+          # fetched, 7 failed, 0 published). The same probe on gemini-2.5-flash
+          # succeeded on the first key. Quotas are PER-MODEL, so moving off the
+          # alias also gets a fresh bucket. gemini-2.5-flash-lite and
+          # gemini-flash-lite-latest also answered if this one saturates too.
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-2.5-flash' }}
           # Fresh JWT per run via POST /auth/login — no pasted cookie to expire.
           NEPSE_EMAIL: ${{ secrets.NEPSE_EMAIL }}
           NEPSE_PASSWORD: ${{ secrets.NEPSE_PASSWORD }}
