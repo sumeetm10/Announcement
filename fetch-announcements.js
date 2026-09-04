@@ -1065,6 +1065,14 @@ async function ocrSingleImageViaGeminiWithCurrentKey(imageBuffer, indexLabel, me
       // generous safety margin for even the longest stitched multi-page
       // notices without paying for tokens we won't use.
       maxOutputTokens: 32768,
+      // 2026-09-04: gemini-2.5-flash reasons before answering, and those
+      // THINKING tokens are charged against maxOutputTokens. On the Sanima Bank
+      // 22nd AGM notice the budget ran out partway through: the Nepali half came
+      // back (3882 chars), the English half was empty, and the article published
+      // with a blank English tab. Transcription gains nothing from reasoning —
+      // measured on the same image, thinking on vs off gave byte-identical output
+      // in 34.0s vs 8.0s. With it off the whole budget goes to content.
+      thinkingConfig: { thinkingBudget: 0 },
       response_mime_type: "application/json",
     },
   };
@@ -3301,6 +3309,18 @@ async function main() {
     console.log(`${label} ${it.title.substring(0, 80)}`);
     try {
       const result = await fetchAndProcessOne(it, label);
+      // A notice whose English body came back empty while the Nepali body did
+      // not is a TRUNCATED response, not a translation-free notice — the pipeline
+      // always generates both. Publishing it yields an article with a blank
+      // English tab, and because the source URL is then cached as posted it is
+      // never retried. Fail it instead so the next run picks it up.
+      const npLen = String(result.nepali_content || "").length;
+      const enLen = String(result.english_content || "").length;
+      if (npLen > 0 && enLen === 0) {
+        throw new Error(
+          `English body empty (nepali=${npLen} chars) — truncated response, not publishing`
+        );
+      }
       news.push(result);
       console.log(`${label} OK\n`);
     } catch (e) {
