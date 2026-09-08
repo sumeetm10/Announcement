@@ -28,6 +28,7 @@ const readline = require("readline");
 // pages 2+ and causes the model to "fill in" with hallucinated/repeated
 // values. Per-chunk OCR keeps each page at full resolution.
 const sharp = require("sharp");
+const { translateNepaliToEnglish } = require("./translate-fallback.js");
 
 // ─── Config ───
 const LIST_URL = "https://www.sharesansar.com/announcement";
@@ -1064,7 +1065,10 @@ async function ocrSingleImageViaGeminiWithCurrentKey(imageBuffer, indexLabel, me
       // gemini-2.5-flash supports up to 65,535 output tokens; 32K gives a
       // generous safety margin for even the longest stitched multi-page
       // notices without paying for tokens we won't use.
-      maxOutputTokens: 32768,
+      // Raised from 32768 on 2026-09-07. gemini-2.5-flash allows 65,535 output
+      // tokens; the extra headroom keeps mid-size notices in the single combined
+      // call instead of falling through to the slower translation pass below.
+      maxOutputTokens: 65535,
       // 2026-09-04: gemini-2.5-flash reasons before answering, and those
       // THINKING tokens are charged against maxOutputTokens. On the Sanima Bank
       // 22nd AGM notice the budget ran out partway through: the Nepali half came
@@ -3173,7 +3177,24 @@ async function fetchAndProcessOne(item, indexLabel) {
   // article-body formatter sees consistent input for both languages.
   const ocrResult = await ocrViaGemini(imgBuf, indexLabel, mediaType, detail.category);
   const cleanedNp = cleanOcrText(ocrResult.content);
-  const cleanedEn = ocrResult.contentEn ? cleanOcrText(ocrResult.contentEn) : "";
+  let cleanedEn = ocrResult.contentEn ? cleanOcrText(ocrResult.contentEn) : "";
+
+  // Nepali came back but English did not: the combined response ran out of
+  // budget partway through (both languages share one maxOutputTokens). Do NOT
+  // give up on the item — translate the Nepali we already have in a separate,
+  // chunked, text-only pass. Offer letters at 75k-105k characters cannot fit
+  // both languages in any single response, so this is the only path that
+  // publishes them at all. Returns "" if it too fails, in which case the caller
+  // refuses to publish a half-empty article and the next run retries.
+  if (cleanedNp && !cleanedEn) {
+    const translated = await translateNepaliToEnglish(
+      cleanedNp,
+      indexLabel,
+      getGeminiModel(),
+      { getKey: getGeminiKey, rotateKey: rotateGeminiKey }
+    );
+    if (translated) cleanedEn = cleanOcrText(translated);
+  }
 
   return buildAnnouncement(detail, cleanedNp, {
     cleanedEn,

@@ -26,7 +26,12 @@ on:
   schedule:
     - cron: '15,45 1-4 * * 0-5'    # 07:00-10:30 NPT
     - cron: '15,45 10-14 * * 0-5'  # 16:00-20:30 NPT
-  workflow_dispatch:            # manual catch-up run
+  workflow_dispatch:
+    inputs:
+      max_age_days:
+        description: 'How many days back to scan (1 = today only). Raise it to recover announcements a failed run missed.'
+        required: false
+        default: '1'
 
 # Never let two runs post at once. The dedupe is a backend slug lookup plus a
 # local URL cache, and both are read at start-of-run — overlapping runs would
@@ -91,18 +96,31 @@ jobs:
           # env var as unset and falls back to .gemini-model, which is gitignored
           # and absent in CI. Pin it explicitly here.
           #
-          # 2026-09-03: was 'gemini-flash-latest'. That alias is SATURATED for
-          # vision — probing a 945x1417 page across the 6 keys returned
-          # 429/429/429/503, and it cost a full day of announcements (8 items
-          # fetched, 7 failed, 0 published). The same probe on gemini-2.5-flash
-          # succeeded on the first key. Quotas are PER-MODEL, so moving off the
-          # alias also gets a fresh bucket. gemini-2.5-flash-lite and
-          # gemini-flash-lite-latest also answered if this one saturates too.
-          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-2.5-flash' }}
+          # 2026-09-03: was 'gemini-flash-latest' — that alias saturated for
+          # vision (429/429/429/503 across all six keys) and cost a full day of
+          # announcements. Moved to gemini-2.5-flash.
+          #
+          # 2026-09-08: moved again, to gemini-3.5-flash. gemini-2.5-flash began
+          # DEGENERATING on long notices — on the Muktinath and NIC Asia offer
+          # letters it emitted 104,608 and 75,559 Nepali characters of runaway
+          # repetition for documents whose faithful transcription is ~2.4k and
+          # ~6.3k, exhausting maxOutputTokens before the English half and
+          # publishing nothing. The same two documents on gemini-3.5-flash:
+          # 13.6s / 2,433 np / 2,377 en and 20.0s / 6,311 np / 6,103 en.
+          # It had also started returning intermittent
+          # '404 no longer available to new users'.
+          #
+          # Re-probe with a REAL IMAGE before trusting any model here; text-only
+          # calls kept succeeding on gemini-flash-latest long after vision died,
+          # and the models.list endpoint still advertises models that 404.
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-3.5-flash' }}
           # Fresh JWT per run via POST /auth/login — no pasted cookie to expire.
           NEPSE_EMAIL: ${{ secrets.NEPSE_EMAIL }}
           NEPSE_PASSWORD: ${{ secrets.NEPSE_PASSWORD }}
-        run: node auto-post-announcements.js
+        # Scheduled runs scan today only; a manual run can reach further back to
+        # recover items an earlier failure dropped. Those items were never
+        # cached as posted, so widening the window is enough to pick them up.
+        run: node auto-post-announcements.js --max-age-days=${{ github.event.inputs.max_age_days || '1' }}
 
       # Always saved, even when the run fails: the pipeline posts and records
       # incrementally, so a run that dies partway through has still published
