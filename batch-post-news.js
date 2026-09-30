@@ -142,6 +142,9 @@ async function postOne(news, jwt, index, total) {
   }
 
   const body = buildJsonBody(news);
+  // Taken BEFORE the request so a record that predates it cannot be one this
+  // call created. See the ON CONFLICT check below.
+  const postedAtMs = Date.now();
   const res = await fetch(`${API_BASE}/news`, {
     method: "POST",
     headers: {
@@ -167,6 +170,51 @@ async function postOne(news, jwt, index, total) {
 
   const slug = json?.news?.slug || json?.data?.slug || "?";
   const id = json?.news?.id || json?.data?.id || "?";
+
+  // The backend inserts with `ON CONFLICT (slug) DO NOTHING` and then re-fetches
+  // the existing row "so the response shape is consistent" (socials/news.rs:272).
+  // A duplicate slug therefore comes back as HTTP 200 carrying SOMEONE ELSE'S
+  // record, and this poster used to print a tick for it, cache the source URL as
+  // done, and move on — so the notice was never published and could never be
+  // retried. It happened on 2026-09-28: a new Suryodaya Womi Laghubitta 35-day
+  // notice returned id 5326, created 2026-07-15. These notices recur with
+  // identical titles, so the slug collides every time.
+  //
+  // The POST response carries only {id, author_name, slug, status} — no
+  // timestamp — so read the record back. A row created before we sent the
+  // request cannot be the row we just created; 60s absorbs clock skew.
+  if (slug && slug !== "?") {
+    try {
+      const check = await fetch(`${API_BASE}/news/${encodeURIComponent(slug)}`);
+      if (check.ok) {
+        const rec = await check.json().catch(() => ({}));
+        const createdAt = rec?.data?.createdAt || rec?.createdAt || null;
+        const createdMs = createdAt ? Date.parse(createdAt) : NaN;
+        if (Number.isFinite(createdMs) && createdMs < postedAtMs - 60_000) {
+          console.log(
+            `❌ ${label} — SLUG COLLISION: backend returned pre-existing ID:${id} ` +
+              `(created ${createdAt}) for slug:${slug}. Nothing was published.`
+          );
+          return {
+            ok: false,
+            collision: true,
+            id,
+            slug,
+            title: titleDisplay,
+            error: {
+              reason: "slug collision",
+              existingId: id,
+              existingCreatedAt: createdAt,
+            },
+          };
+        }
+      }
+    } catch {
+      // Read-back is a SAFETY NET, not a gate. If it fails we keep the original
+      // success rather than inventing a failure for a post that may have worked.
+    }
+  }
+
   console.log(`✅ ${label} — ID:${id} | slug:${slug}`);
   return { ok: true, id, slug, title: titleDisplay };
 }

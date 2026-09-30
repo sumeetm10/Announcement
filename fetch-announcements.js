@@ -523,6 +523,11 @@ async function fetchAnnouncementList(limit) {
       `      [list-paginate] filtered out ${ageFilteredOut} item(s) older than --max-age-days=${cliMaxAgeDays}\n`
     );
   }
+  // How many items the list page DID parse but the age window rejected. The
+  // caller needs this to tell "nothing was published today" (a normal quiet
+  // day) apart from "the list page parsed nothing at all" (scraper broken).
+  // A named property on the array leaves length/iteration/JSON untouched.
+  all.ageFilteredOut = ageFilteredOut;
   return all;
 }
 
@@ -3306,7 +3311,26 @@ async function main() {
     // now actually return 30 items by reading pages 1 and 2.
     const fullList = await fetchAnnouncementList(count + cliSkip);
     if (fullList.length === 0) {
-      console.error("No announcements parsed (HTML structure may have changed, or all pages returned empty).");
+      // A quiet day is NOT a failure. On 2026-09-25 both scheduled runs went
+      // red with "No announcements parsed" even though the log had already
+      // said "filtered out 10 item(s) older than --max-age-days=1" — the
+      // scraper worked perfectly, ShareSansar simply published nothing new.
+      // Red is reserved for "announcements were lost"; spending it on quiet
+      // days trains the operator to ignore it.
+      if (fullList.ageFilteredOut > 0) {
+        console.log(
+          `No announcements newer than --max-age-days=${cliMaxAgeDays} ` +
+            `(${fullList.ageFilteredOut} older item(s) skipped). Nothing to do.`
+        );
+        // Write the empty result so runFetch() finds the file it expects, and
+        // clear any previous run's failures so they are not re-reported.
+        fs.writeFileSync(OUTPUT_FILE, JSON.stringify([], null, 2), "utf-8");
+        fs.writeFileSync(FAILURES_FILE, JSON.stringify([], null, 2), "utf-8");
+        return;
+      }
+      console.error(
+        "No announcements parsed (HTML structure may have changed, or all pages returned empty)."
+      );
       process.exit(1);
     }
     if (fullList.length <= cliSkip) {
