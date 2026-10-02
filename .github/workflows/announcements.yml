@@ -32,6 +32,10 @@ on:
         description: 'How many days back to scan (1 = today only). Raise it to recover announcements a failed run missed.'
         required: false
         default: '1'
+      count:
+        description: 'How many of the newest ShareSansar notices to scan. Raise it with max_age_days on a catch-up: at month-end 40 covers barely two days.'
+        required: false
+        default: '40'
 
 # Never let two runs post at once. The dedupe is a backend slug lookup plus a
 # local URL cache, and both are read at start-of-run — overlapping runs would
@@ -119,8 +123,12 @@ jobs:
           NEPSE_PASSWORD: ${{ secrets.NEPSE_PASSWORD }}
         # Scheduled runs scan today only; a manual run can reach further back to
         # recover items an earlier failure dropped. Those items were never
-        # cached as posted, so widening the window is enough to pick them up.
-        run: node auto-post-announcements.js --max-age-days=${{ github.event.inputs.max_age_days || '1' }}
+        # cached as posted, so widening the window is enough to pick them up -
+        # PROVIDED they are inside the --count scan. 2026-10-02: a 6-day catch-up
+        # at the default 40 never reached the 09-28/29 notices because month-end
+        # NAV reports had pushed them past the newest 40. Already-posted items are
+        # skipped by the URL cache before OCR, so a large count costs no quota.
+        run: node auto-post-announcements.js --max-age-days=${{ github.event.inputs.max_age_days || '1' }} --count=${{ github.event.inputs.count || '40' }}
 
       # Always saved, even when the run fails: the pipeline posts and records
       # incrementally, so a run that dies partway through has still published
