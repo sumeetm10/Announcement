@@ -163,7 +163,11 @@ function loadPostedUrlsCache() {
 }
 
 const POSTED_URLS_CACHE = loadPostedUrlsCache();
-const MAX_COUNT = 50;
+// Raised from 50 on 2026-10-02. At month-end the NAV-report flood fills ~40
+// notices in two days, so a catch-up after a multi-day outage cannot reach the
+// oldest missed items at 50. The real bounds on work are --max-age-days and the
+// pre-OCR URL-cache skip; this ceiling only guards against a typo'd count.
+const MAX_COUNT = 150;
 
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
@@ -403,7 +407,7 @@ function isItemWithinAgeDays(item, maxAgeDays) {
 //
 // URL pattern: ShareSansar uses `?page=N` for pagination (verified). The
 // first page works with or without `?page=1`.
-const MAX_LIST_PAGES = 5;            // safety ceiling (5 pages × ~15-20 items = ~100 items)
+const MAX_LIST_PAGES = 10;           // safety ceiling (10 pages x ~15-20 items, covers MAX_COUNT)
 const LIST_PAGE_DELAY_MS = 1000;     // be nice to ShareSansar's server
 
 // Find the "Next »" pagination link in a ShareSansar listing page's HTML.
