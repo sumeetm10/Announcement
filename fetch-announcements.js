@@ -1017,7 +1017,76 @@ async function splitImageIntoGrid(imageBuffer, mediaType, indexLabel) {
 // {content, shortTitleNp, shortTitleEn} or throws on hard failure. This
 // is the body that used to be in ocrViaGemini before the split wrapper
 // was added.
+// Model fallback (2026-10-14).
+//
+// Gemini capacity is BURSTY and per-model. Every pinned model has failed in
+// turn: gemini-flash-latest (09-03, vision saturated), gemini-2.5-flash (09-07,
+// runaway output + intermittent 404), and gemini-3.5-flash (10-13: 12 of 12
+// items on 503). A probe minutes later found 3.5-flash answering in 2 s while
+// 3.8-flash 503'd and then took 216 s. Re-pinning only moves the problem; the
+// fix is to try the next model when one is saturated.
+//
+// Quota is ALSO per-model, so each model keeps its own key index. The old global
+// index only ever moved forward: once all six keys were 429 on one model, every
+// key was treated as dead for the rest of the run even though each was fresh on
+// any other model.
+//
+// Only capacity errors (429 / 5xx / all keys exhausted) move to the next model.
+// Anything else (bad request, unparseable output) is a real failure and is
+// thrown straight away - a different model would not fix it and would only hide
+// it.
+const DEFAULT_FALLBACK_MODELS = [
+  "gemini-3.6-flash",
+  "gemini-2.5-flash-lite",
+  "gemini-2.5-flash",
+  "gemini-flash-latest",
+];
+const _modelKeyIndex = new Map();
+// A model that failed on capacity is tried LAST for the rest of the run, so the
+// following items do not each burn ~30 s of retries on it first.
+const _coolingModels = new Set();
+
+function geminiFallbackModels() {
+  const env = (process.env.GEMINI_FALLBACK_MODELS || "").trim();
+  if (env) return env.split(",").map((s) => s.trim()).filter(Boolean);
+  return DEFAULT_FALLBACK_MODELS;
+}
+
+function isCapacityError(e) {
+  const msg = String((e && e.message) || e || "");
+  return /Gemini (429|500|502|503|504)\b/.test(msg) || /exhausted|RESOURCE_EXHAUSTED|UNAVAILABLE/i.test(msg);
+}
+
 async function ocrSingleImageViaGemini(imageBuffer, indexLabel, mediaType, model) {
+  const chain = [model, ...geminiFallbackModels()].filter((m, i, a) => m && a.indexOf(m) === i);
+  const order = [
+    ...chain.filter((m) => !_coolingModels.has(m)),
+    ...chain.filter((m) => _coolingModels.has(m)),
+  ];
+  let lastErr = null;
+  for (let n = 0; n < order.length; n++) {
+    const m = order[n];
+    if (n > 0) {
+      process.stdout.write(`      ${indexLabel} [model-fallback] trying ${m}...\n`);
+    }
+    _activeKeyIndex = _modelKeyIndex.get(m) || 0;
+    try {
+      const value = await ocrSingleImageViaGeminiOneModel(imageBuffer, indexLabel, mediaType, m);
+      _modelKeyIndex.set(m, _activeKeyIndex);
+      _coolingModels.delete(m);
+      return value;
+    } catch (e) {
+      _modelKeyIndex.set(m, _activeKeyIndex);
+      if (!isCapacityError(e)) throw e;
+      _coolingModels.add(m);
+      lastErr = e;
+    }
+  }
+  throw lastErr || new Error("Gemini: every model in the fallback chain failed");
+}
+
+
+async function ocrSingleImageViaGeminiOneModel(imageBuffer, indexLabel, mediaType, model) {
   // Outer loop = "key attempts". Inner loop = "retries on transient errors
   // for the current key." When the inner loop fails out with a 429 AND
   // we have backup keys, we rotate and the outer loop tries again.
