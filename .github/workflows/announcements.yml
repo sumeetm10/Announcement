@@ -51,9 +51,11 @@ permissions:
 jobs:
   post:
     runs-on: ubuntu-latest
-    # Worst observed run was 55 min. 90 caps a hung Gemini call well under the
-    # 6h job ceiling so a stuck run cannot eat the month's minutes.
-    timeout-minutes: 90
+    # Posting happens once, at the END of the run, so a timeout throws away
+    # every notice already read. 2026-11-19: a 16-day catch-up read 45 notices
+    # in 90 min and lost them all. 330 leaves room for ~150 notices and stays
+    # under the 6 h job ceiling.
+    timeout-minutes: 330
 
     steps:
       - uses: actions/checkout@v4
